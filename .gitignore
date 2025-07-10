@@ -1,0 +1,36 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*.so
+
+# Ignore virtual environment
+myvenv/
+venv/
+.env/
+
+# Ignore Jupyter/IPython notebooks checkpoints
+.ipynb_checkpoints
+
+# Ignore VS Code and PyCharm settings (optional)
+.vscode/
+.idea/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore logs
+*.log
+
+# Ignore model checkpoints and temporary files
+
+*.pt
+*.ckpt
+*.tmp
+
+# Ignore uploads or test images (optional if you have uploads/)
+uploads/
+*.jpg
+*.png
+
+# NOTE: We do NOT ignore app/__init__.py, so it will be included in commits
