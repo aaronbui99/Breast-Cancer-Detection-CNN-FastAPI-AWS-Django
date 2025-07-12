@@ -30,7 +30,5 @@ Thumbs.db
 
 # Ignore uploads or test images (optional if you have uploads/)
 uploads/
-*.jpg
-*.png
 
 # NOTE: We do NOT ignore app/__init__.py, so it will be included in commits
