@@ -25,4 +25,4 @@ async def predict(file: UploadFile = File(...)):
         prob = torch.sigmoid(output).item()
         predicted_class = 1 if prob > 0.5 else 0
 
-    return {"prediction": predicted_class, "probability": prob}
+    return {"message": "Model is loaded and ready!", "prediction": predicted_class, "probability": prob}
