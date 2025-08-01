@@ -1,0 +1,108 @@
+# Simplified ECS Infrastructure for PyTorch Inference
+service: breast-cancer-pytorch
+
+provider:
+  name: aws
+  runtime: python3.10
+  stage: ${opt:stage, 'prod'}
+  region: ${opt:region, 'ap-southeast-2'}
+
+resources:
+  Resources:
+    # ECR Repository for Docker images
+    ECRRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: breast-cancer-pytorch
+        ImageScanningConfiguration:
+          ScanOnPush: true
+        LifecyclePolicy:
+          LifecyclePolicyText: |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep only 5 latest images",
+                  "selection": {
+                    "tagStatus": "any",
+                    "countType": "imageCountMoreThan",
+                    "countNumber": 5
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }
+
+    # ECS Cluster (simplified - no capacity provider issues)
+    ECSCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: breast-cancer-pytorch-cluster
+
+    # CloudWatch Log Group
+    LogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/breast-cancer-pytorch
+        RetentionInDays: 7
+
+    # ECS Task Execution Role
+    ECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+    # ECS Task Role
+    ECSTaskRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: S3Access
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource:
+                    - "arn:aws:s3:::breast-cancer-detection-api-${self:provider.stage}-images/*"
+
+  Outputs:
+    ECRRepositoryURI:
+      Description: ECR Repository URI
+      Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}"
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ECRRepositoryURI
+    
+    ClusterName:
+      Description: ECS Cluster Name
+      Value: !Ref ECSCluster
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ClusterName
+
+    TaskExecutionRoleArn:
+      Description: ECS Task Execution Role ARN
+      Value: !GetAtt ECSTaskExecutionRole.Arn
+      Export:
+        Name: ${self:service}-${self:provider.stage}-TaskExecutionRoleArn
+
+    TaskRoleArn:
+      Description: ECS Task Role ARN
+      Value: !GetAtt ECSTaskRole.Arn
+      Export:
+        Name: ${self:service}-${self:provider.stage}-TaskRoleArn

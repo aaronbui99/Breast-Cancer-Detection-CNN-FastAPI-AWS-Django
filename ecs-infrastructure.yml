@@ -1,0 +1,321 @@
+# ECS Infrastructure for PyTorch Inference Service
+service: breast-cancer-pytorch-ecs
+
+provider:
+  name: aws
+  runtime: python3.10
+  stage: ${opt:stage, 'prod'}
+  region: ${opt:region, 'ap-southeast-2'}
+
+custom:
+  serviceName: breast-cancer-pytorch
+  clusterName: ${self:custom.serviceName}-cluster-${self:provider.stage}
+  taskDefinitionName: ${self:custom.serviceName}-task-${self:provider.stage}
+  containerName: pytorch-inference
+  imageTag: ${opt:tag, 'latest'}
+  
+resources:
+  Resources:
+    # VPC for ECS
+    VPC:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 10.0.0.0/16
+        EnableDnsHostnames: true
+        EnableDnsSupport: true
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-vpc
+
+    # Internet Gateway
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+      Properties:
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-igw
+
+    InternetGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        InternetGatewayId: !Ref InternetGateway
+        VpcId: !Ref VPC
+
+    # Public Subnets
+    PublicSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: ${self:provider.region}a
+        CidrBlock: 10.0.1.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-public-subnet-1
+
+    PublicSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: ${self:provider.region}b
+        CidrBlock: 10.0.2.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-public-subnet-2
+
+    # Route Table
+    PublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPC
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-public-routes
+
+    DefaultPublicRoute:
+      Type: AWS::EC2::Route
+      DependsOn: InternetGatewayAttachment
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref InternetGateway
+
+    PublicSubnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet1
+
+    PublicSubnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet2
+
+    # Security Group for ALB
+    LoadBalancerSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Access to the public facing load balancer
+        VpcId: !Ref VPC
+        SecurityGroupIngress:
+          - CidrIp: 0.0.0.0/0
+            IpProtocol: -1
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-alb-sg
+
+    # Security Group for ECS
+    ECSSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Access to the ECS containers
+        VpcId: !Ref VPC
+        SecurityGroupIngress:
+          - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+            IpProtocol: -1
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-ecs-sg
+
+    # Application Load Balancer
+    LoadBalancer:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Name: ${self:custom.serviceName}-alb
+        Subnets:
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+        SecurityGroups:
+          - !Ref LoadBalancerSecurityGroup
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-alb
+
+    # Target Group
+    TargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        Name: ${self:custom.serviceName}-tg
+        Port: 8080
+        Protocol: HTTP
+        VpcId: !Ref VPC
+        TargetType: ip
+        HealthCheckIntervalSeconds: 30
+        HealthCheckPath: /health
+        HealthCheckProtocol: HTTP
+        HealthCheckTimeoutSeconds: 5
+        HealthyThresholdCount: 2
+        UnhealthyThresholdCount: 3
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}-tg
+
+    # Load Balancer Listener
+    LoadBalancerListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        DefaultActions:
+          - TargetGroupArn: !Ref TargetGroup
+            Type: forward
+        LoadBalancerArn: !Ref LoadBalancer
+        Port: 80
+        Protocol: HTTP
+
+    # ECS Cluster
+    ECSCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: ${self:custom.clusterName}
+        CapacityProviders:
+          - FARGATE
+        DefaultCapacityProviderStrategy:
+          - CapacityProvider: FARGATE
+            Weight: 1
+        Tags:
+          - Key: Name
+            Value: ${self:custom.clusterName}
+
+    # ECR Repository
+    ECRRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: ${self:custom.serviceName}
+        ImageScanningConfiguration:
+          ScanOnPush: true
+        Tags:
+          - Key: Name
+            Value: ${self:custom.serviceName}
+
+    # ECS Task Definition
+    TaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: ${self:custom.taskDefinitionName}
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        Cpu: 1024
+        Memory: 3008
+        ExecutionRoleArn: !Ref ECSTaskExecutionRole
+        TaskRoleArn: !Ref ECSTaskRole
+        ContainerDefinitions:
+          - Name: ${self:custom.containerName}
+            Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:${self:custom.imageTag}"
+            PortMappings:
+              - ContainerPort: 8080
+                Protocol: tcp
+            Environment:
+              - Name: S3_BUCKET_NAME
+                Value: breast-cancer-detection-api-${self:provider.stage}-images
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Ref CloudWatchLogsGroup
+                awslogs-region: ${self:provider.region}
+                awslogs-stream-prefix: ecs
+            HealthCheck:
+              Command:
+                - CMD-SHELL
+                - curl -f http://localhost:8080/health || exit 1
+              Interval: 30
+              Timeout: 5
+              Retries: 3
+              StartPeriod: 60
+
+    # ECS Service
+    ECSService:
+      Type: AWS::ECS::Service
+      DependsOn: LoadBalancerListener
+      Properties:
+        ServiceName: ${self:custom.serviceName}-service
+        Cluster: !Ref ECSCluster
+        LaunchType: FARGATE
+        DeploymentConfiguration:
+          MaximumPercent: 200
+          MinimumHealthyPercent: 100
+        DesiredCount: 1
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            SecurityGroups:
+              - !Ref ECSSecurityGroup
+            Subnets:
+              - !Ref PublicSubnet1
+              - !Ref PublicSubnet2
+            AssignPublicIp: ENABLED
+        TaskDefinition: !Ref TaskDefinition
+        LoadBalancers:
+          - ContainerName: ${self:custom.containerName}
+            ContainerPort: 8080
+            TargetGroupArn: !Ref TargetGroup
+
+    # IAM Roles
+    ECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        Policies:
+          - PolicyName: ECRAccess
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ecr:GetAuthorizationToken
+                    - ecr:BatchCheckLayerAvailability
+                    - ecr:GetDownloadUrlForLayer
+                    - ecr:BatchGetImage
+                  Resource: "*"
+
+    ECSTaskRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: S3Access
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource:
+                    - "arn:aws:s3:::breast-cancer-detection-api-${self:provider.stage}-images/*"
+
+    # CloudWatch Logs
+    CloudWatchLogsGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/${self:custom.serviceName}
+        RetentionInDays: 7
+
+  Outputs:
+    LoadBalancerURL:
+      Description: The URL of the load balancer
+      Value: !Sub http://${LoadBalancer.DNSName}
+      Export:
+        Name: ${self:service}-${self:provider.stage}-LoadBalancerURL
+    
+    ECRRepositoryURI:
+      Description: The URI of the ECR repository
+      Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ECRRepositoryURI
+        
+    ClusterName:
+      Description: The name of the ECS cluster
+      Value: !Ref ECSCluster
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ClusterName

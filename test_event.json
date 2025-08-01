@@ -1,0 +1,26 @@
+{
+  "resource": "/health",
+  "path": "/health",
+  "httpMethod": "GET",
+  "headers": {
+    "x-api-key": "jEseEYjAD05yKdX8VadOm3M3GN5IKfxO7PkHUeNo",
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+  },
+  "queryStringParameters": null,
+  "pathParameters": null,
+  "body": null,
+  "isBase64Encoded": false,
+  "requestContext": {
+    "requestId": "test-request",
+    "stage": "prod",
+    "httpMethod": "GET",
+    "path": "/prod/health",
+    "protocol": "HTTP/1.1",
+    "requestTime": "2025-07-26T08:00:00.000Z",
+    "requestTimeEpoch": 1722067200000,
+    "identity": {
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

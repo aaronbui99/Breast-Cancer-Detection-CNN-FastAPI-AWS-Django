@@ -1,0 +1,125 @@
+service: breast-cancer-detection-api 
+  
+provider:
+  name: aws
+  runtime: python3.10
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-southeast-2'}
+  memorySize: 1024
+  timeout: 30
+  environment:
+    S3_BUCKET_NAME: ${self:custom.s3BucketName}
+    USE_ECS_PYTORCH: "true"
+    ECS_PYTORCH_URL: ${env:ECS_PYTORCH_URL, 'http://placeholder-not-ready:8080'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+          Resource:
+            - "arn:aws:s3:::${self:custom.s3BucketName}/*"
+  apiGateway:
+    apiKeys:
+      - name: breast-cancer-api-key-${self:provider.stage}
+        description: API key for breast cancer detection API
+    usagePlan:
+      quota:
+        limit: 1000
+        period: MONTH
+      throttle:
+        burstLimit: 10
+        rateLimit: 5
+    binaryMediaTypes:
+      - '*/*'
+      - 'multipart/form-data'
+      - 'image/png'
+      - 'image/jpeg'
+      - 'image/jpg'
+      - 'image/gif'
+      - 'image/webp'
+      - 'application/octet-stream'
+
+  
+custom:  
+  s3BucketName: ${self:service}-${self:provider.stage}-images  
+  pythonRequirements:  
+    # Use a separate requirements file that excludes torch and torchvision
+    fileName: requirements-deploy.txt
+    dockerizePip: true  
+    slim: true  
+    layer: true  
+    useStaticCache: true  
+    useDownloadCache: true  
+    cacheLocation: '.serverless/.requirements-cache'  
+    zip: true  
+    stripPath: true 
+    # Exclude unnecessary packages to reduce size
+    noDeploy:  
+      - nvidia.*  
+      - cusparselt  
+      - scipy.*  
+      - matplotlib.*  
+      - PIL.ImageTk  
+      - tests.*  
+      - __pycache__/
+      - "*.pyc"
+      - "*.pyo"
+      - "*/__pycache__/*" 
+  
+functions:  
+  api:  
+    handler: app.main.handler  
+    events:  
+      - http:  
+          path: /{proxy+}  
+          method: any  
+          private: true  # This enables API key requirement  
+    layers:  
+      - {Ref: PythonRequirementsLambdaLayer}
+
+package:  
+  individually: true  
+  patterns:  
+    # Exclude everything by default
+    - '!**'
+    # Then include only what we need
+    - 'app/**'
+    - 'models/best_model.pth'
+    - 'requirements-deploy.txt'
+    - 'serverless.yml'
+    # Exclude specific patterns
+    - '!**/__pycache__/**'  
+    - '!**/*.pyc'
+    - '!**/*.pyo'
+    - '!**/*.pyd'
+    - '!**/*.so'  
+    - '!**/*.so.*'  
+    - '!**/*.dylib'  
+    - '!**/*.dll'  
+    - '!**/*.lib'
+    - '!.requirements.zip'
+    - '!.serverless/**' 
+  
+resources:  
+  Resources:  
+    ImagesBucket:  
+      Type: AWS::S3::Bucket  
+      Properties:  
+        BucketName: ${self:custom.s3BucketName}  
+        CorsConfiguration:  
+          CorsRules:  
+            - AllowedHeaders:  
+                - '*'  
+              AllowedMethods:  
+                - GET  
+                - PUT  
+                - POST  
+                - DELETE  
+                - HEAD  
+              AllowedOrigins:  
+                - '*'  
+  
+plugins:  
+  - serverless-python-requirements 

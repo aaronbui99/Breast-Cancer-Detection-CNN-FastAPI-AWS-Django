@@ -1,0 +1,78 @@
+service: breast-cancer-detection-api
+
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-southeast-2'}
+  memorySize: 1024
+  timeout: 28
+  ecr:
+    # Automatically created ECR repository
+    images:
+      appimage:
+        path: ./
+        file: Dockerfile
+  environment:
+    S3_BUCKET_NAME: ${self:custom.s3BucketName}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+          Resource:
+            - "arn:aws:s3:::${self:custom.s3BucketName}/*"
+  apiGateway:
+    apiKeys:
+      - name: breast-cancer-api-key-${self:provider.stage}
+        description: API key for breast cancer detection API
+    usagePlan:
+      quota:
+        limit: 1000
+        period: MONTH
+      throttle:
+        burstLimit: 10
+        rateLimit: 5
+    binaryMediaTypes:
+      - '*/*'
+      - 'multipart/form-data'
+      - 'image/png'
+      - 'image/jpeg'
+      - 'image/jpg'
+      - 'image/gif'
+      - 'image/webp'
+      - 'application/octet-stream'
+
+custom:
+  s3BucketName: ${self:service}-${self:provider.stage}-images
+
+functions:
+  api-container:
+    image:
+      name: appimage
+    timeout: 28  # Set to 28 seconds (less than API Gateway's 29s limit)
+    events:
+      - http:
+          path: /{proxy+}
+          method: any
+          private: true  # This enables API key requirement
+
+resources:
+  Resources:
+    ImagesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3BucketName}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedOrigins:
+                - '*'

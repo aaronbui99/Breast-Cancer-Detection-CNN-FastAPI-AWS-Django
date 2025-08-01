@@ -7,6 +7,7 @@ __pycache__/
 myvenv/
 venv/
 .env/
+.env
 
 # Ignore Jupyter/IPython notebooks checkpoints
 .ipynb_checkpoints
@@ -32,3 +33,8 @@ Thumbs.db
 uploads/
 
 # NOTE: We do NOT ignore app/__init__.py, so it will be included in commits
+
+.serverless/**
+
+node_modules/
+package-lock.json

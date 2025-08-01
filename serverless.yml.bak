@@ -1,0 +1,110 @@
+service: breast-cancer-detection-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.10
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'ap-southeast-2'}
+  memorySize: 1024
+  timeout: 30
+  environment:
+    S3_BUCKET_NAME: ${self:custom.s3BucketName}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+        - s3:GetObject
+      Resource: "arn:aws:s3:::${self:custom.s3BucketName}/*"
+  apiGateway:
+    apiKeys:
+      - name: breast-cancer-api-key-${self:provider.stage}
+        description: API key for breast cancer detection API
+    usagePlan:
+      quota:
+        limit: 1000
+        period: MONTH
+      throttle:
+        burstLimit: 10
+        rateLimit: 5
+
+custom:
+  s3BucketName: ${self:service}-${self:provider.stage}-images
+  pythonRequirements:
+    dockerizePip: true
+    slim: true
+    layer: true
+    # Remove the noDeploy section to include torch and other dependencies
+    useStaticCache: true
+    useDownloadCache: true
+    cacheLocation: '.serverless/.requirements-cache'
+    zip: true
+    stripPath: true
+    noDeploy:
+      - torch.cuda
+      - torchvision.datasets
+      - nvidia.*
+      - scipy.*
+      - matplotlib.*
+      - PIL.ImageTk
+      - tests.*
+      - __pycache__/
+      - cusparselt
+
+functions:
+  api:
+    handler: app.main.handler
+    events:
+      - http:
+          path: /{proxy+}
+          method: any
+          private: true  # This enables API key requirement
+    layers:
+      - {Ref: PythonRequirementsLambdaLayer}
+      # Uncomment and add your PyTorch layer ARN after uploading it to AWS
+      # - arn:aws:lambda:ap-southeast-2:ACCOUNT_ID:layer:pytorch:1
+
+package:
+  exclude:
+    - '!node_modules/**'
+    - '!**/__pycache__/**'
+    - '!**/*.png'
+    - '!**/*.jpg'
+    - '!**/*.jpeg'
+    - '!**/*.mp4'
+    - '!**/*.ipynb'
+    - '!myvenv/**'
+    - '!venv/**'
+    - '!.venv/**'
+    - '!**/*.test.*'
+    - '!serverless/**'
+    - '!.requirements.zip'
+    - '!.serverless/.requirements-cache/**'
+    - '!.serverless/requirements/torch/lib/libtorch_cuda.so'
+    - '!.serverless/requirements/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9'
+    - '!.serverless/requirements/nvidia/cublas/lib/libcublasLt.so.12'
+    - '.serverless/pythonRequirements.zip'
+    - 'models/best_model.pth'
+
+resources:
+  Resources:
+    ImagesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.s3BucketName}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              AllowedOrigins:
+                - '*'
+
+plugins:
+  - serverless-python-requirements

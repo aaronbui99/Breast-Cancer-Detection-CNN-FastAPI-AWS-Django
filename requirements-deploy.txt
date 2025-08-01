@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+Pillow
+python-multipart
+numpy
+mangum
+boto3
+aiohttp

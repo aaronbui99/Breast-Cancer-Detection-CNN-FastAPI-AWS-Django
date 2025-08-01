@@ -1,0 +1,16 @@
+myvenv/
+venv/
+.venv/
+**/*.pth
+**/*.pt
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.mp4
+**/*.ipynb
+models/
+*.pt
+*.pth
+*.zip
+__pycache__/
+requirements.zip
