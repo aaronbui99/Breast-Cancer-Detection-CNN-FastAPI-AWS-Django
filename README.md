@@ -304,3 +304,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [AWS Lambda Container Images](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
 - [Serverless Framework](https://www.serverless.com/framework/docs/)
 - [PyTorch Documentation](https://pytorch.org/docs/)
+
+## Future improve
+
+- Implement on AWS ECS or AWS EKS since they are using GPU instead of CPU like AWS Lambda.
