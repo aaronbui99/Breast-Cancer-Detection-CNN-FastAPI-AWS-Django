@@ -9,8 +9,6 @@ provider:
   timeout: 30
   environment:
     S3_BUCKET_NAME: ${self:custom.s3BucketName}
-    USE_ECS_PYTORCH: "true"
-    ECS_PYTORCH_URL: ${env:ECS_PYTORCH_URL, 'http://placeholder-not-ready:8080'}
   iam:
     role:
       statements:

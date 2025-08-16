@@ -21,37 +21,23 @@ try:
     # Log successful imports
     logger.info("Successfully imported basic dependencies")
     
-    # Check prediction method preference
-    use_ecs_pytorch = os.getenv('USE_ECS_PYTORCH', 'true').lower() == 'true'
-    
-    if use_ecs_pytorch:
-        # Use ECS-based PyTorch prediction (recommended)
+    # Try to import PyTorch dependencies for local processing
+    try:
+        import torch
+        import torchvision
+        from app.predict import predict_route
+        prediction_method = "local_pytorch"
+        logger.info("Using local PyTorch prediction model")
+    except (ImportError, OSError, Exception) as torch_error:
+        logger.warning(f"PyTorch not available: {torch_error}")
+        # Fall back to simple prediction without PyTorch
         try:
-            from app.ecs_predict import ecs_predict_route, ecs_health_check
-            prediction_method = "ecs_pytorch"
-            logger.info("Using ECS-based PyTorch prediction service")
-        except (ImportError, Exception) as ecs_error:
-            logger.warning(f"ECS prediction not available: {ecs_error}")
-            use_ecs_pytorch = False
-    
-    if not use_ecs_pytorch:
-        # Try to import PyTorch dependencies for local processing
-        try:
-            import torch
-            import torchvision
-            from app.predict import predict_route
-            prediction_method = "local_pytorch"
-            logger.info("Using local PyTorch prediction model")
-        except (ImportError, OSError, Exception) as torch_error:
-            logger.warning(f"PyTorch not available: {torch_error}")
-            # Fall back to simple prediction without PyTorch
-            try:
-                from app.simple_predict import simple_predict_route
-                prediction_method = "simple"
-                logger.info("Using simplified prediction model (no PyTorch)")
-            except (ImportError, Exception) as simple_error:
-                logger.error(f"Failed to import simple prediction: {simple_error}")
-                raise
+            from app.simple_predict import simple_predict_route
+            prediction_method = "simple"
+            logger.info("Using simplified prediction model (no PyTorch)")
+        except (ImportError, Exception) as simple_error:
+            logger.error(f"Failed to import simple prediction: {simple_error}")
+            raise
     
     # Initialize FastAPI app
     app = FastAPI(
@@ -61,12 +47,7 @@ try:
     )
     
     # Include the appropriate prediction router
-    if prediction_method == "ecs_pytorch":
-        # Add ECS-based prediction routes
-        @app.post("/predict/")
-        async def predict_endpoint(file: UploadFile = File(...)):
-            return await ecs_predict_route(file)
-    elif prediction_method == "local_pytorch":
+    if prediction_method == "local_pytorch":
         app.include_router(predict_route)
     else:  # simple prediction
         app.include_router(simple_predict_route, prefix="/predict")
@@ -108,8 +89,7 @@ try:
                 "working_directory": os.getcwd(),
                 "s3_bucket_name": s3_bucket,
                 "torch_version": torch_version,
-                "torchvision_version": torchvision_version,
-                "use_ecs_pytorch": os.getenv('USE_ECS_PYTORCH', 'false')
+                "torchvision_version": torchvision_version
             }
         }
     

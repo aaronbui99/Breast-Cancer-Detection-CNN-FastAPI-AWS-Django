@@ -246,22 +246,22 @@ python test_dev_api.py
 
 ### Common Issues
 
-1. **NumPy Import Error**: Install numpy into EFS at the same path as PyTorch
-2. **PyTorch Import Error**: Verify PYTHONPATH includes EFS mount path
-3. **Lambda Timeout**: Increase timeout in serverless.yml (current: 30s)
-4. **Memory Issues**: Increase memorySize in serverless.yml (current: 1024MB)
+1. **PyTorch Import Error**: Ensure PyTorch dependencies are properly packaged
+2. **Lambda Timeout**: Increase timeout in serverless.yml (current: 30s)
+3. **Memory Issues**: Increase memorySize in serverless.yml (current: 1024MB)
+4. **Model Loading Issues**: Verify model file is included in deployment package
 
 ### Debug Commands
 
 ```bash
-# Check ECS logs
-python check_ecs_logs.py
-
-# Check ECS status
-python check_ecs_status.py
-
 # Debug API requests
 python debug_api_request.py
+
+# Test local development
+uvicorn app.main:app --reload
+
+# Check health endpoint
+curl -H "x-api-key: YOUR_API_KEY" https://your-api-endpoint/health
 ```
 
 ## 🔒 Security
